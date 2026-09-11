@@ -1,0 +1,17 @@
+services:
+  edge-video:
+    build:
+      context: .
+    image: $(edge-video_TAG)
+    container_name: edge-video
+    restart: unless-stopped
+    env_file:
+      - .env
+    privileged: true
+    volumes:
+      #- ${EDGE_VIDEO_EVIDENCE_ROOT}:/recordings
+      - ../recordings/videos:/recordings
+      - /run/udev:/run/udev:ro
+      - /dev:/dev
+    ports:
+      - "${EDGE_VIDEO_HEALTH_PORT:-8090}:8090"

@@ -1,0 +1,21 @@
+# Reference configuration. Environment variables are the runtime source in v0.1.0.
+# Controller configuration will become authoritative for operational settings in a later phase.
+video:
+  camera_index: 0
+  width: 1920
+  height: 1080
+  framerate: 30
+  bitrate: 8000000
+  segment_seconds: 60
+
+evidence:
+  local_first: true
+  format: h264
+  codec: h264
+  hash: sha256
+  manifest_schema: ai-legal.evidence.video.v1
+  time_source: system
+  gps_authority: false
+
+stream:
+  enabled: false
