@@ -1,0 +1,1239 @@
+# edge-video
+
+Containerized Raspberry Pi video capture and evidence service for the AI Legal Edge platform.
+
+`edge-video` provides local-first video capture, authoritative raw H.264 evidence segmentation, SHA-256 evidence manifests, optional HLS live streaming, and registration/status integration with the generic Edge Controller.
+
+The current implementation is an **MVP focused on reliable local evidence capture from a Raspberry Pi CSI camera**. Multi-camera support, USB/V4L2 cameras, GPS/PPS authoritative time, server-side evidence ingestion, and AI video analysis are future development phases.
+
+---
+
+## Current Status
+
+**Version:** `0.1.0`
+
+**Current tested hardware:**
+
+* Raspberry Pi 4
+* Raspberry Pi CSI camera
+* OV5647 sensor
+* Raspberry Pi `rpicam` / libcamera stack
+* Docker deployment
+
+**Current tested capture configuration:**
+
+```text
+1920x1080
+30 FPS
+H.264
+12 Mbps
+inline H.264 headers
+```
+
+**Current capabilities:**
+
+* Raspberry Pi CSI camera discovery
+* OV5647 capture
+* Hardware H.264 capture through `rpicam-vid`
+* Local raw H.264 evidence segmentation
+* 60-second evidence segments
+* SHA-256 hashing
+* Atomic JSON evidence manifests
+* System/monotonic timing metadata
+* Controller node/service registration
+* Controller configuration retrieval
+* Controller runtime status updates
+* Optional HLS live streaming
+* Docker deployment
+* Automatic container restart
+* HTTP health endpoint
+
+**Current limitations:**
+
+* One camera per `edge-video` process
+* Raspberry Pi CSI/libcamera cameras only
+* Generic USB/V4L2 cameras are not yet supported
+* Multiple simultaneous cameras are not yet supported
+* GPS/PPS authoritative timestamps are not yet integrated
+* Raw H.264 timestamp warnings remain
+* HLS latency has not yet been optimized
+* Server-side evidence ingestion is not implemented
+* AI video analysis is not implemented
+
+---
+
+# Architecture
+
+The current media architecture is:
+
+```text
+                    Raspberry Pi CSI Camera
+                              |
+                              v
+                         rpicam-vid
+                              |
+                              | H.264 stdout
+                              |
+                              v
+                       MediaPipeline
+                              |
+                 +------------+------------+
+                 |                         |
+                 v                         v
+          Evidence FFmpeg             Live FFmpeg
+                 |                         |
+                 v                         v
+        Raw H.264 segments                HLS
+                 |                         |
+                 v                         v
+          Evidence finalizer          /stream
+                 |
+                 +--> fsync
+                 |
+                 +--> SHA-256
+                 |
+                 +--> JSON manifest
+```
+
+The evidence path is the authoritative path.
+
+Live streaming is optional and is not intended to become the authoritative evidence source.
+
+AI analysis in future phases must consume a read-only copy/replica of authoritative evidence rather than modifying the original evidence.
+
+---
+
+# Camera Capture
+
+The current implementation uses:
+
+```text
+rpicam-vid
+libcamera
+```
+
+for Raspberry Pi CSI camera capture.
+
+Camera discovery is performed through the Raspberry Pi camera stack.
+
+A typical camera reports information such as:
+
+```text
+index: 0
+sensor: ov5647
+native: 2592x1944 10-bit GBRG
+path: /base/soc/i2c0mux/i2c@1/ov5647@36
+```
+
+The selected camera is currently configured with:
+
+```text
+EDGE_VIDEO_CAMERA_INDEX=0
+```
+
+The media pipeline opens the selected camera once and captures its H.264 output.
+
+Current capture command is conceptually:
+
+```bash
+rpicam-vid \
+  --camera 0 \
+  --timeout 0 \
+  --nopreview \
+  --width 1920 \
+  --height 1080 \
+  --framerate 30 \
+  --bitrate 12000000 \
+  --codec h264 \
+  --inline \
+  -o -
+```
+
+The camera's encoded H.264 stream is written to stdout and consumed by the media pipeline.
+
+---
+
+# Evidence Capture
+
+Evidence capture is local-first.
+
+Current evidence pipeline:
+
+```text
+rpicam-vid
+    |
+    | H.264 stdout
+    v
+FFmpeg
+    |
+    | stream copy
+    v
+60-second raw H.264 segments
+```
+
+The current evidence command is equivalent to:
+
+```bash
+ffmpeg \
+  -hide_banner \
+  -loglevel warning \
+  -f h264 \
+  -framerate 30 \
+  -i pipe:0 \
+  -an \
+  -c:v copy \
+  -f segment \
+  -segment_time 60 \
+  -segment_format h264 \
+  /recordings/segment%06d.h264
+```
+
+The video is **not re-encoded** by FFmpeg.
+
+The current evidence format is:
+
+```text
+H.264 elementary stream
+```
+
+It is **not MKV**.
+
+Each completed segment is finalized by the evidence recorder.
+
+---
+
+# Evidence Finalization
+
+The recorder monitors completed H.264 segments.
+
+A segment must be stable before it is finalized.
+
+Finalization performs:
+
+```text
+segment
+   |
+   v
+fsync
+   |
+   v
+SHA-256
+   |
+   v
+JSON manifest
+```
+
+The manifest is written atomically.
+
+Example runtime result:
+
+```text
+Evidence finalized: segment000000.h264
+sha256=b63db94a9dbffbb77e077670e3f61363aa07b6c4077b7e06f7d319e941432e21
+```
+
+The original evidence segment is not modified after finalization.
+
+---
+
+# Evidence Manifests
+
+Each evidence segment receives a corresponding JSON manifest.
+
+Current manifest metadata includes information describing:
+
+* Capture timing
+* Camera information
+* Video properties
+* SHA-256 hash
+* Service start timing
+* Media pipeline
+* Evidence transport
+* Live transport
+* Timestamp limitations
+
+The current media pipeline metadata identifies:
+
+```json
+{
+  "camera_owner": "rpicam-vid",
+  "encoded_format": "h264",
+  "evidence_transport": "stdout->ffmpeg",
+  "live_transport": "stdout->ffmpeg->hls"
+}
+```
+
+when live streaming is enabled.
+
+This metadata is intentionally explicit so future evidence processing can distinguish the authoritative evidence path from derived/live media.
+
+---
+
+# Time Model
+
+Version `0.1.0` does **not** claim GPS-authoritative time.
+
+The current evidence timestamp model uses:
+
+```text
+UTC system time
+monotonic clock
+clock_source: system
+time_quality: unsynchronized
+gps_authority: false
+```
+
+This is intentional because Raspberry Pi systems may not have a reliable hardware RTC and the current GPS/PPS integration is not yet part of `edge-video`.
+
+Future integration with `edge-gps` must extend the timestamp authority without modifying the original video payload.
+
+The future timestamp model must distinguish:
+
+```text
+system clock
+monotonic clock
+GPS-derived time
+PPS synchronization
+capture timing
+container/media timestamps
+```
+
+---
+
+# Live HLS Streaming
+
+Live streaming is optional.
+
+Current configuration:
+
+```env
+EDGE_VIDEO_ENABLE_STREAM=true
+EDGE_VIDEO_HLS_SEGMENT_SECONDS=1
+EDGE_VIDEO_HLS_SEGMENT_COUNT=3
+```
+
+The live pipeline uses FFmpeg to convert the captured H.264 stream into HLS:
+
+```text
+H.264
+   |
+   v
+FFmpeg
+   |
+   v
+HLS
+   |
+   +--> index.m3u8
+   +--> segment*.ts
+```
+
+The live playlist is served through:
+
+```text
+/stream
+```
+
+with the playlist:
+
+```text
+/stream/index.m3u8
+```
+
+Current observed end-to-end HLS latency is approximately:
+
+```text
+8 seconds
+```
+
+HLS latency optimization is deferred.
+
+---
+
+# Live Stream vs Evidence
+
+The architectural priority is:
+
+```text
+AUTHORITATIVE EVIDENCE
+        >
+LIVE STREAM
+        >
+FUTURE AI ANALYSIS
+```
+
+The live stream is disposable.
+
+A live client disconnect is not an evidence failure.
+
+Current HTTP clients may produce a connection-reset message when they disconnect from the stream. This is not currently treated as a media capture failure.
+
+The live pipeline must not become the authoritative source of evidence.
+
+---
+
+# Controller Integration
+
+`edge-video` uses the generic Edge Controller node/service architecture.
+
+Controller URL is configured with:
+
+```env
+EDGE_CONTROLLER_URL=http://spoo-lin.spoocannon.com:8080
+```
+
+The service registers beneath a physical node:
+
+```text
+pi4nVME
+└── edge-video
+```
+
+or:
+
+```text
+pi4SSD
+└── edge-video
+```
+
+The service does not create a separate controller node for each Docker container.
+
+Current controller operations include:
+
+```text
+GET  /api/v1/nodes/{node_id}
+GET  /api/v1/nodes/{node_id}/services
+POST /api/v1/nodes/{node_id}/services
+GET  /api/v1/nodes/{node_id}/services/{service_id}/configuration
+PUT  /api/v1/nodes/{node_id}/services/{service_id}/status
+```
+
+The current implementation has been verified against the Edge Controller with HTTP 200 responses for:
+
+```text
+node lookup
+service lookup
+status update
+configuration retrieval
+```
+
+The controller architecture supports multiple services per physical node.
+
+---
+
+# Physical Node Identity
+
+Docker normally provides a container-specific hostname.
+
+That is not appropriate as the Edge Controller node identity.
+
+The current Docker deployment therefore uses:
+
+```yaml
+uts: host
+```
+
+This causes:
+
+```python
+socket.gethostname()
+```
+
+inside the container to return the physical Raspberry Pi hostname.
+
+For example:
+
+```text
+physical host:
+    pi4nVME
+
+container:
+    edge-video
+
+socket.gethostname():
+    pi4nVME
+```
+
+This allows `edge-video` to register beneath the same physical node as the other edge services.
+
+The configuration still supports an explicit:
+
+```env
+EDGE_NODE_ID=
+```
+
+override when required, but normal Raspberry Pi deployments do not need to hard-code the physical node identity.
+
+---
+
+# Current Docker Deployment
+
+Current Compose structure:
+
+```yaml
+services:
+  edge-video:
+    build:
+      context: .
+    image: $(edge-video_TAG)
+    container_name: edge-video
+    restart: unless-stopped
+    uts: host
+    env_file:
+      - .env
+    privileged: true
+    volumes:
+      - ../recordings/videos:/recordings
+      - /run/udev:/run/udev:ro
+      - /dev:/dev
+    ports:
+      - "${EDGE_VIDEO_HEALTH_PORT:-8090}:8090"
+```
+
+The deployment requires access to the Raspberry Pi device subsystem.
+
+Current container configuration provides:
+
+```text
+/dev
+/run/udev
+```
+
+and runs privileged.
+
+The container automatically restarts unless stopped.
+
+---
+
+# Recording Storage
+
+The current deployment maps:
+
+```text
+../recordings/videos
+```
+
+on the host to:
+
+```text
+/recordings
+```
+
+inside the container.
+
+Therefore evidence files currently appear under:
+
+```text
+/recordings
+```
+
+inside the container and:
+
+```text
+../recordings/videos
+```
+
+on the host relative to the deployment directory.
+
+The evidence recorder creates:
+
+```text
+segment000000.h264
+segment000001.h264
+...
+```
+
+and:
+
+```text
+manifests/
+    segment000000.json
+    segment000001.json
+    ...
+```
+
+---
+
+# Configuration
+
+Current important configuration:
+
+```env
+EDGE_CONTROLLER_URL=http://spoo-lin.spoocannon.com:8080
+
+EDGE_SERVICE_ID=edge-video
+EDGE_SERVICE_NAME=edge-video
+EDGE_SERVICE_VERSION=0.1.0
+
+EDGE_VIDEO_CAMERA_INDEX=0
+EDGE_VIDEO_WIDTH=1920
+EDGE_VIDEO_HEIGHT=1080
+EDGE_VIDEO_FRAMERATE=30
+EDGE_VIDEO_BITRATE=12000000
+EDGE_VIDEO_SEGMENT_SECONDS=60
+EDGE_VIDEO_INLINE_HEADERS=true
+
+EDGE_VIDEO_ENABLE_STREAM=true
+EDGE_VIDEO_HLS_SEGMENT_SECONDS=1
+EDGE_VIDEO_HLS_SEGMENT_COUNT=3
+
+EDGE_VIDEO_HEALTH_PORT=8090
+```
+
+Additional configuration exists for:
+
+```text
+rpicam binary
+FFmpeg binary
+health host
+health port
+evidence root
+live root
+controller timeout
+```
+
+See `.envSAMPLE` for the complete configuration list.
+
+---
+
+# Health Endpoint
+
+The service exposes HTTP health information on port:
+
+```text
+8090
+```
+
+Default local endpoint:
+
+```text
+http://127.0.0.1:8090/health
+```
+
+Docker publishes the configured health port to the host.
+
+---
+
+# Raspberry Pi Camera Test
+
+Before deploying the service, camera discovery can be tested directly on the Raspberry Pi:
+
+```bash
+rpicam-hello --list-cameras
+```
+
+A basic H.264 capture test can be performed with:
+
+```bash
+rpicam-vid \
+  -t 10s \
+  --width 1920 \
+  --height 1080 \
+  --codec h264 \
+  -o test.h264
+```
+
+The exact camera modes available depend on the connected sensor and Raspberry Pi camera stack.
+
+---
+
+# Docker Deployment
+
+Create the deployment environment from `.envSAMPLE`:
+
+```bash
+cp .envSAMPLE .env
+```
+
+Configure the environment as required.
+
+Then:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+Check the container:
+
+```bash
+docker ps
+```
+
+Check logs:
+
+```bash
+docker logs -f edge-video
+```
+
+Check health:
+
+```bash
+curl http://127.0.0.1:8090/health
+```
+
+---
+
+# Current Tested Runtime
+
+A successful runtime should show approximately:
+
+```text
+Controller client configured:
+    node_id=pi4nVME
+    service_id=edge-video
+    service_version=0.1.0
+
+Controller registration completed successfully
+
+Media pipeline started:
+    rpicam-vid ...
+    
+Evidence recorder started
+
+Live HLS stream enabled at /stream
+```
+
+The controller should show:
+
+```text
+pi4nVME
+└── edge-video
+```
+
+or:
+
+```text
+pi4SSD
+└── edge-video
+```
+
+depending on the physical host.
+
+---
+
+# Known FFmpeg Timestamp Warning
+
+The current implementation produces warnings similar to:
+
+```text
+Timestamps are unset in a packet for stream 0.
+This is deprecated and will stop working in the future.
+```
+
+This occurs because the authoritative evidence stream is raw H.264 and does not contain container timestamps.
+
+This is currently a known limitation.
+
+It must eventually be addressed as part of the evidence/timestamp architecture.
+
+The solution must not compromise the raw evidence model or incorrectly imply GPS-authoritative timestamps.
+
+---
+
+# Known Limitations
+
+## Single camera
+
+The current implementation supports one selected camera per `edge-video` process.
+
+Current selection is based on:
+
+```env
+EDGE_VIDEO_CAMERA_INDEX=0
+```
+
+The media pipeline currently owns:
+
+```text
+one rpicam-vid process
+one evidence FFmpeg process
+one optional HLS FFmpeg process
+```
+
+Multiple simultaneous cameras are not implemented.
+
+---
+
+## USB/V4L2 cameras
+
+Generic USB cameras are not currently supported.
+
+The current camera backend is:
+
+```text
+rpicam-vid / libcamera
+```
+
+A future implementation must add a V4L2 backend rather than assuming that changing the camera index will make `/dev/videoN` USB cameras work.
+
+---
+
+## Multiple cameras
+
+Future versions need to support combinations such as:
+
+```text
+Pi CSI camera
++
+USB camera
+```
+
+and:
+
+```text
+USB camera
++
+USB camera
+```
+
+and potentially:
+
+```text
+multiple CSI cameras
+```
+
+where supported by the Raspberry Pi hardware.
+
+The target architecture is:
+
+```text
+edge-video
+├── camera-0
+│   ├── evidence
+│   └── live
+├── camera-1
+│   ├── evidence
+│   └── live
+└── camera-N
+    ├── evidence
+    └── live
+```
+
+Each camera must have an independent capture/evidence lifecycle.
+
+---
+
+# Future Camera Architecture
+
+The next major development phase is to introduce a camera abstraction capable of representing multiple camera backends.
+
+Target backends:
+
+```text
+libcamera
+v4l2
+```
+
+A camera should eventually have a first-class identity and capability set:
+
+```text
+camera_id
+backend
+device
+sensor/model
+capabilities
+resolution
+framerate
+pixel format
+configuration
+status
+```
+
+The implementation should discover actual devices and capabilities rather than hard-coding:
+
+```text
+camera 0 = CSI
+camera 1 = USB
+```
+
+---
+
+# Future Multi-Camera Evidence Layout
+
+The final storage layout is not yet locked.
+
+A likely structure is:
+
+```text
+/recordings/
+├── camera-0/
+│   ├── segment000000.h264
+│   ├── segment000001.h264
+│   └── manifests/
+│
+├── camera-1/
+│   ├── segment000000.h264
+│   ├── segment000001.h264
+│   └── manifests/
+│
+└── camera-N/
+    ├── segment000000.h264
+    ├── segment000001.h264
+    └── manifests/
+```
+
+Camera identity must be part of the eventual evidence metadata.
+
+---
+
+# Future Controller Integration
+
+The desired controller hierarchy is:
+
+```text
+Physical Node
+└── edge-video
+    ├── camera-0
+    ├── camera-1
+    └── camera-N
+```
+
+Cameras should **not** become separate Edge Controller services.
+
+`edge-video` remains the service.
+
+Camera-specific configuration and status belong inside the service's configuration/status model.
+
+The eventual controller configuration should be capable of representing:
+
+```json
+{
+  "cameras": [
+    {
+      "id": "camera-0",
+      "backend": "libcamera",
+      "enabled": true,
+      "width": 1920,
+      "height": 1080,
+      "framerate": 30,
+      "bitrate": 12000000
+    },
+    {
+      "id": "camera-1",
+      "backend": "v4l2",
+      "enabled": true
+    }
+  ]
+}
+```
+
+This is a future design target, not current functionality.
+
+---
+
+# Development Roadmap
+
+## Phase 0 — Current MVP
+
+Complete and preserve:
+
+* CSI camera capture
+* H.264 capture
+* Local evidence segmentation
+* SHA-256 manifests
+* Controller registration
+* Controller status
+* Optional HLS
+* Docker deployment
+* Physical node identity
+
+This is the current baseline.
+
+---
+
+## Phase 1 — Camera abstraction
+
+Implement:
+
+* Camera manager
+* Camera discovery
+* Backend abstraction
+* Device identity
+* Capability discovery
+* Configuration validation
+
+Preserve the existing OV5647/libcamera path.
+
+---
+
+## Phase 2 — USB/V4L2 support
+
+Add:
+
+```text
+V4L2 camera discovery
+V4L2 camera configuration
+V4L2 capture
+```
+
+Test:
+
+```text
+USB only
+CSI + USB
+multiple USB
+```
+
+where hardware permits.
+
+---
+
+## Phase 3 — Multi-camera capture
+
+Replace the current single-camera media architecture with independent camera pipelines.
+
+Each pipeline must independently manage:
+
+```text
+capture
+evidence
+manifest
+live stream
+status
+shutdown
+failure recovery
+```
+
+One camera failure must not unnecessarily terminate other cameras.
+
+---
+
+## Phase 4 — Multi-camera controller integration
+
+Expose camera-specific configuration and status through the existing generic `edge-video` service.
+
+Do not change the generic Node → Service controller architecture.
+
+---
+
+## Phase 5 — Controller GUI
+
+Add dynamic camera configuration.
+
+Potential controls:
+
+```text
+camera enable/disable
+camera name
+backend/device
+resolution
+framerate
+bitrate
+evidence settings
+live stream settings
+```
+
+Settings must be constrained by discovered camera capabilities.
+
+---
+
+## Phase 6 — Evidence timestamp architecture
+
+Address:
+
+* raw H.264 timestamp warnings
+* GPS/PPS integration
+* synchronized time
+* timestamp authority
+* capture timing
+* monotonic timing
+* evidence manifest timing
+
+The authoritative evidence payload must remain immutable.
+
+---
+
+## Phase 7 — Server-side evidence ingestion
+
+Future architecture:
+
+```text
+Pi local evidence
+        |
+        v
+server ingestion
+        |
+        v
+verification
+        |
+        v
+immutable storage
+```
+
+Future requirements include:
+
+* upload acknowledgements
+* integrity verification
+* retry handling
+* retention policy
+* replication
+* event markers
+
+---
+
+## Phase 8 — Server-side media gateway
+
+Evaluate:
+
+```text
+MediaMTX
+```
+
+or an equivalent media gateway for live distribution.
+
+The Raspberry Pi must remain capable of local evidence capture when the network or media gateway is unavailable.
+
+---
+
+## Phase 9 — AI analysis
+
+AI processing must consume a read-only evidence replica.
+
+Potential future workers:
+
+```text
+object detection
+person/vehicle detection
+OCR
+scene analysis
+event detection
+incident correlation
+```
+
+AI-generated results must remain distinguishable from the original evidence.
+
+---
+
+# Evidence Integrity Requirements
+
+The following principles are non-negotiable:
+
+```text
+Local evidence is authoritative.
+Original evidence is immutable after finalization.
+SHA-256 identifies the finalized evidence.
+Manifests describe the evidence and capture conditions.
+Live streaming is secondary.
+AI analysis is secondary.
+Network availability must not be required for evidence capture.
+```
+
+The architectural priority is:
+
+```text
+AUTHORITATIVE EVIDENCE
+        >
+LIVE STREAM
+        >
+AI ANALYSIS
+```
+
+---
+
+# Relationship to Other Edge Services
+
+`edge-video` is one service in the broader edge platform.
+
+The intended physical-node architecture is:
+
+```text
+Raspberry Pi
+├── edge-audio
+├── edge-gps
+└── edge-video
+```
+
+The Edge Controller must treat nodes as capable of hosting multiple services.
+
+`edge-video` must not introduce assumptions that a node hosts only video.
+
+Likewise, controller integration must remain compatible with the generic service architecture already used by the other edge services.
+
+---
+
+# Related Projects
+
+Related edge services:
+
+```text
+edge-controller
+edge-audio
+edge-gps
+```
+
+The public repositories are:
+
+```text
+https://github.com/troy-cichosz/edge-controller
+https://github.com/troy-cichosz/edge-audio
+https://github.com/troy-cichosz/edge-gps
+https://github.com/troy-cichosz/edge-video
+```
+
+---
+
+# Development Rules
+
+When extending `edge-video`:
+
+1. Preserve local-first evidence capture.
+2. Never make live streaming the authoritative evidence source.
+3. Never require the controller or network for basic evidence capture.
+4. Preserve SHA-256 evidence verification.
+5. Preserve immutable finalized evidence.
+6. Keep camera backends abstract.
+7. Do not hard-code Raspberry Pi CSI cameras as the only future camera type.
+8. Do not hard-code one camera as the permanent architecture.
+9. Keep the Edge Controller integration generic.
+10. Treat camera-specific configuration as part of the `edge-video` service.
+11. Preserve physical-node identity.
+12. Keep AI processing separate from authoritative evidence.
+13. Prefer configuration/environment variables over hard-coded operational settings.
+14. Preserve backward compatibility with the currently working OV5647 deployment whenever practical.
+
+---
+
+# Current Baseline
+
+The current MVP has been verified on Raspberry Pi 4 systems including:
+
+```text
+pi4SSD
+pi4nVME
+```
+
+with OV5647 CSI cameras.
+
+The following are currently operational:
+
+```text
+camera discovery
+camera capture
+H.264 encoding
+local evidence recording
+60-second segmentation
+SHA-256 hashing
+JSON manifests
+controller registration
+controller status
+controller configuration retrieval
+HLS live streaming
+Docker deployment
+health endpoint
+```
+
+The next development priority is:
+
+```text
+camera abstraction
+        ↓
+V4L2 / USB support
+        ↓
+multi-camera capture
+        ↓
+multi-camera evidence
+        ↓
+multi-camera controller configuration/status
+```
+
+GPS/PPS timing, server-side ingestion, media gateway integration, and AI analysis follow after the multi-camera architecture is stable.
