@@ -422,48 +422,11 @@ The controller architecture supports multiple services per physical node.
 
 # Physical Node Identity
 
-Docker normally provides a container-specific hostname.
+The controller node identity represents the physical hosting node, not an individual Docker container.
 
-That is not appropriate as the Edge Controller node identity.
+The deployment normally uses the host's runtime identity so multiple services on the same physical node register beneath the same Node. An explicit `EDGE_NODE_ID` override remains available when required.
 
-The current Docker deployment therefore uses:
-
-```yaml
-uts: host
-```
-
-This causes:
-
-```python
-socket.gethostname()
-```
-
-inside the container to return the physical Raspberry Pi hostname.
-
-For example:
-
-```text
-physical host:
-    pi4nVME
-
-container:
-    edge-video
-
-socket.gethostname():
-    pi4nVME
-```
-
-This allows `edge-video` to register beneath the same physical node as the other edge services.
-
-The configuration still supports an explicit:
-
-```env
-EDGE_NODE_ID=
-```
-
-override when required, but normal Raspberry Pi deployments do not need to hard-code the physical node identity.
-
----
+This service follows the project rule that nodes may host multiple services; `edge-video` is a Service, not a special controller Node.
 
 # Configuration
 
@@ -687,43 +650,3 @@ Each camera must have an independent capture/evidence lifecycle.
 
 ---
 
-# Future Camera Architecture
-
-The next major development phase is to introduce a camera abstraction capable of representing multiple camera backends.
-
-Target backends:
-
-```text
-libcamera
-v4l2
-```
-
-A camera should eventually have a first-class identity and capability set:
-
-```text
-camera_id
-backend
-device
-sensor/model
-capabilities
-resolution
-framerate
-pixel format
-configuration
-status
-```
-
-The implementation should discover actual devices and capabilities rather than hard-coding:
-
-```text
-camera 0 = CSI
-camera 1 = USB
-```
-
----
-
-## Future Direction
-
-The next service-level expansion is camera abstraction and capability discovery, followed by additional camera backends and independent multi-camera pipelines. Capture-time correlation with the platform temporal model remains part of the evidence integration work.
-
-These future capabilities must preserve the generic Node -> Service controller architecture and the authoritative local evidence path.
