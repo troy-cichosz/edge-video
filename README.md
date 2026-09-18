@@ -339,12 +339,6 @@ with the playlist:
 /stream/index.m3u8
 ```
 
-Current observed end-to-end HLS latency is approximately:
-
-```text
-8 seconds
-```
-
 HLS latency optimization is deferred.
 
 ---
@@ -375,27 +369,9 @@ The live pipeline must not become the authoritative source of evidence.
 
 `edge-video` uses the generic Edge Controller node/service architecture.
 
-Controller URL is configured with:
+The controller URL is deployment configuration and must use the host-addressed controller endpoint. Docker service/container names must not be used.
 
-```env
-EDGE_CONTROLLER_URL=http://spoo-lin.spoocannon.com:8080
-```
-
-The service registers beneath a physical node:
-
-```text
-pi4nVME
-└── edge-video
-```
-
-or:
-
-```text
-pi4SSD
-└── edge-video
-```
-
-The service does not create a separate controller node for each Docker container.
+The service registers beneath the physical hosting node. The service does not create a separate controller node for each Docker container.
 
 Current controller operations include:
 
@@ -433,7 +409,7 @@ This service follows the project rule that nodes may host multiple services; `ed
 Current important configuration:
 
 ```env
-EDGE_CONTROLLER_URL=http://spoo-lin.spoocannon.com:8080
+EDGE_CONTROLLER_URL=<host-addressed-controller-url>
 
 EDGE_SERVICE_ID=edge-video
 EDGE_SERVICE_NAME=edge-video
