@@ -1,14 +1,14 @@
 # edge-video — Service Status
 
 **Purpose:** Current development phase and maturity of the video evidence service.  
-**Status:** Operational MVP / next integration target  
+**Status:** Operational MVP / temporal integration complete  
 **Last reviewed:** September 2026
 
 ## Current Phase
 
 **Phase 1 — Evidence Capture MVP: OPERATIONAL**
 
-The Raspberry Pi CSI-camera evidence pipeline is operational as an MVP. The next development increment is evidence-facing temporal integration with local `edge-time`.
+The Raspberry Pi CSI-camera evidence pipeline is operational as an MVP, including evidence-facing temporal integration with local `edge-time`.
 
 ## Verified MVP Capabilities
 
@@ -20,6 +20,8 @@ The Raspberry Pi CSI-camera evidence pipeline is operational as an MVP. The next
 - 60-second evidence segments
 - SHA-256 hashing and atomic JSON manifests
 - System/monotonic timing metadata
+- Local edge-time Capture Time Context acquisition and temporal provenance
+- Graceful temporal fallback when edge-time is unavailable
 - Generic controller registration/configuration/status
 - Optional HLS live streaming
 - Health endpoint and restart behavior
@@ -34,7 +36,15 @@ The raw H.264 path has known timestamp warnings because the elementary stream do
 
 ## Current Temporal Position
 
-The service does not claim GPS/PPS-authoritative timestamps. The next integration is to associate local edge-time Capture Time Context with video evidence while preserving the distinction between context acquisition time and physical camera exposure timing.
+The service does not claim GPS/PPS-authoritative video timestamps. At the evidence boundary, `edge-video` acquires Capture Time Context from the local `edge-time` instance and associates it with the evidence manifest.
+
+The temporal context preserves source observation, UTC/monotonic position, uncertainty, freshness, synchronization state, authority provenance, consistency, holdover, and attestation reference.
+
+Capture Time Context acquisition is not the exact physical camera exposure time unless a separately defined sensor/frame timing mechanism establishes that relationship. The current implementation does not make that claim.
+
+If `edge-time` is unavailable, video capture and evidence finalization continue using local system/monotonic timing and the manifest records temporal-context unavailability.
+
+No GPS/PPS-authoritative video timestamp is currently claimed.
 
 ## Current Limitations
 
