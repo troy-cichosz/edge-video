@@ -72,3 +72,41 @@ def build_manifest(config, camera, video_path: Path, started_at, ended_at=None, 
         }
         manifest["notes"].append("Node-local edge-time context was unavailable near segment creation.")
     return manifest
+
+
+def build_evidence_envelope(manifest: dict) -> dict:
+    """Build the Round 1 common evidence envelope from the video manifest."""
+    capture = manifest["capture"]
+    return {
+        "schema": "ai-legal.evidence.envelope.v1",
+        "evidence_id": manifest["evidence_id"],
+        "service": manifest["service"],
+        "service_version": manifest["service_version"],
+        "node_id": manifest["node_id"],
+        "source": {},
+        "capture": {
+            "start": capture["start_utc"],
+            "end": capture["end_utc"],
+            "monotonic_start_ns": capture.get("start_monotonic_ns"),
+            "time_semantics": "service_start_reference; segment_physical_start_not_established",
+        },
+        "time_context": manifest.get("temporal_provenance", {}).get("edge_time"),
+        "artifacts": [
+            {
+                "artifact_id": f'{manifest["evidence_id"]}:video',
+                "role": "authoritative",
+                "filename": manifest["video"]["filename"],
+                "media_type": "video/h264",
+                "size": manifest["video"]["bytes"],
+                "sha256": manifest["video"]["sha256"],
+            }
+        ],
+        "configuration": None,
+        "derivation": None,
+        "service_metadata": {
+            "camera": manifest["camera"],
+            "video": manifest["video"],
+            "media_pipeline": manifest.get("media_pipeline"),
+            "integrity": manifest["integrity"],
+        },
+    }
