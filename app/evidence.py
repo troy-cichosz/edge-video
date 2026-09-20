@@ -86,9 +86,9 @@ def build_evidence_envelope(manifest: dict) -> dict:
         "source": {},
         "capture": {
             "start": capture["start_utc"],
-            "end": capture["end_utc"],
+            "end": None,
             "monotonic_start_ns": capture.get("start_monotonic_ns"),
-            "time_semantics": "service_start_reference; segment_physical_start_not_established",
+            "time_semantics": "service_start_reference; segment_physical_interval_not_established",
         },
         "time_context": manifest.get("temporal_provenance", {}).get("edge_time"),
         "artifacts": [
