@@ -27,3 +27,9 @@ Do not use `/dev/video0` as the camera identity. The sensor/camera index from rp
 docker logs -f edge-video
 curl http://127.0.0.1:8090/status
 ```
+
+## Inspect temporal integration
+
+Capture Time Context is obtained from the local `edge-time` instance by `edge-video` at the evidence boundary. The controller is not involved in temporal acquisition.
+
+For temporal troubleshooting, verify the local `edge-time` health/status endpoints and then inspect the `edge-video` logs for context acquisition or fallback messages. Loss of `edge-time` must not stop authoritative video capture or evidence finalization; the evidence manifest records temporal-context unavailability when applicable.
