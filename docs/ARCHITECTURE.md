@@ -12,9 +12,18 @@ The network stream is never the authoritative evidence source. A network outage 
 
 1. Monotonic clock: ordering and interval measurement.
 2. System UTC: current timestamp when GPS is unavailable.
-3. GPS/PPS-disciplined UTC: authoritative time once edge-gps supports it.
+3. Local edge-time Capture Time Context: evidence-facing temporal provenance at the acquisition boundary.
+4. GPS/PPS-disciplined UTC: authoritative time once edge-gps supports it.
 
 A later clock authority must not rewrite existing payloads or manifests. Instead, it creates a verifiable relationship between monotonic time and authoritative UTC.
+
+Capture Time Context acquisition is not the exact physical camera exposure time unless a separately defined sensor/frame timing mechanism establishes that relationship.
+
+## Temporal context
+
+At the evidence boundary, `edge-video` requests Capture Time Context from the local `edge-time` instance and associates the returned context with the evidence manifest. The context provides UTC/monotonic position, source observation, uncertainty, freshness, synchronization state, authority provenance, consistency, holdover, and attestation reference.
+
+If `edge-time` is unavailable, local capture continues using system/monotonic timing and the manifest records the missing temporal context. The controller is not involved in this exchange and is not a timestamp broker.
 
 ## Segment lifecycle
 
