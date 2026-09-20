@@ -23,6 +23,7 @@ class Recorder:
         self.started_at = None
         self.started_monotonic_ns = None
         self.edge_time_context = None
+        self._segment_contexts = {}
         self.edge_time = EdgeTimeClient(config.edge_time_url, config.edge_time_timeout)
 
     @property
@@ -55,11 +56,31 @@ class Recorder:
 
     def _finalize_available(self):
         for path in sorted(self.root.glob("segment*.h264")):
-            if path.name in self._known or not self._is_stable(path):
+            if path.name in self._known:
                 continue
+
+            if path.name not in self._segment_contexts:
+                self._segment_contexts[path.name] = self.edge_time.capture_context()
+                context = self._segment_contexts[path.name]
+                if context:
+                    logger.info(
+                        "Acquired edge-time context %s for evidence segment %s",
+                        context.get("context_id"),
+                        path.name,
+                    )
+                else:
+                    logger.warning(
+                        "No edge-time context available for evidence segment %s",
+                        path.name,
+                    )
+
+            if not self._is_stable(path):
+                continue
+
             try:
                 self._finalize(path)
                 self._known.add(path.name)
+                self._segment_contexts.pop(path.name, None)
             except Exception:
                 logger.exception("Failed to finalize evidence segment %s", path.name)
 
@@ -80,7 +101,7 @@ class Recorder:
 
     def _finalize(self, path):
         fsync_file(path)
-        manifest = build_manifest(self.config, self.camera_info, path, self.started_at, started_monotonic_ns=self.started_monotonic_ns, edge_time_context=self.edge_time_context)
+        manifest = build_manifest(self.config, self.camera_info, path, self.started_at, started_monotonic_ns=self.started_monotonic_ns, edge_time_context=self._segment_contexts.get(path.name))
         manifest["capture"]["service_start_monotonic_ns"] = self.started_monotonic_ns
         manifest["capture"]["segment_timing"] = "ffmpeg_segment_muxer_keyframe_aligned; raw_h264_has_no_embedded_container_timestamps"
         manifest["media_pipeline"] = {"camera_owner": "rpicam-vid", "encoded_format": "h264", "evidence_transport": "stdout->ffmpeg", "live_transport": "stdout->ffmpeg->hls" if self.config.enable_stream else None}
