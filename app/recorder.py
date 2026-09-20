@@ -3,7 +3,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from .evidence import build_manifest, fsync_file, write_json_atomic
+from .evidence import build_evidence_envelope, build_manifest, fsync_file, write_json_atomic
 from .time import EdgeTimeClient
 
 logger = logging.getLogger(__name__)
