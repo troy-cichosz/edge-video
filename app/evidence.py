@@ -57,10 +57,18 @@ def build_manifest(config, camera, video_path: Path, started_at, ended_at=None, 
         "notes": ["Video is stored as segmented H.264 elementary streams in this release."],
     }
     if edge_time_context is not None:
-        manifest["temporal_provenance"] = {"context_acquisition": "edge-time Capture Time Context acquired at recorder start", "capture_time_semantics": "context_acquisition_not_physical_exposure", "edge_time": edge_time_context}
+        manifest["temporal_provenance"] = {
+            "context_acquisition": "edge-time Capture Time Context acquired near segment creation",
+            "capture_time_semantics": "context_acquisition_not_physical_exposure",
+            "edge_time": edge_time_context,
+        }
         capture["clock_source"] = "edge-time-context"
         capture["time_quality"] = edge_time_context.get("synchronization_state", "unknown")
     else:
-        manifest["temporal_provenance"] = {"context_acquisition": None, "capture_time_semantics": "system_start_time_only", "edge_time": None}
-        manifest["notes"].append("Node-local edge-time context was unavailable when recording started.")
+        manifest["temporal_provenance"] = {
+            "context_acquisition": None,
+            "capture_time_semantics": "system_start_time_only",
+            "edge_time": None,
+        }
+        manifest["notes"].append("Node-local edge-time context was unavailable near segment creation.")
     return manifest
