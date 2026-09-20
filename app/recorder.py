@@ -22,7 +22,6 @@ class Recorder:
         self._known = set()
         self.started_at = None
         self.started_monotonic_ns = None
-        self.edge_time_context = None
         self._segment_contexts = {}
         self.edge_time = EdgeTimeClient(config.edge_time_url, config.edge_time_timeout)
 
@@ -33,11 +32,6 @@ class Recorder:
     def start(self):
         self.started_at = datetime.now(timezone.utc)
         self.started_monotonic_ns = time.monotonic_ns()
-        self.edge_time_context = self.edge_time.capture_context()
-        if self.edge_time_context:
-            logger.info("Acquired node-local edge-time context %s", self.edge_time_context.get("context_id"))
-        else:
-            logger.warning("Continuing video capture without edge-time temporal context")
         self.media.start()
         self._watcher = threading.Thread(target=self._watch_segments, name="edge-video-evidence-finalizer", daemon=True)
         self._watcher.start()
