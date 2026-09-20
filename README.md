@@ -40,6 +40,9 @@ inline H.264 headers
 * SHA-256 hashing
 * Atomic JSON evidence manifests
 * System/monotonic timing metadata
+* Local edge-time Capture Time Context acquisition
+* Temporal provenance in evidence manifests
+* Graceful temporal fallback when edge-time is unavailable
 * Controller node/service registration
 * Controller configuration retrieval
 * Controller runtime status updates
@@ -251,6 +254,11 @@ Current manifest metadata includes information describing:
 * Evidence transport
 * Live transport
 * Timestamp limitations
+* Temporal provenance and Capture Time Context when available
+
+When Capture Time Context is available, the manifest records the context acquisition and temporal provenance associated with the evidence segment. This provenance does not replace timestamps in the raw H.264 payload and does not assert exact physical camera exposure timing.
+
+If edge-time is unavailable during finalization, the evidence segment is still finalized and the manifest records that temporal context was unavailable.
 
 The current media pipeline metadata identifies:
 
@@ -271,30 +279,36 @@ This metadata is intentionally explicit so future evidence processing can distin
 
 # Time Model
 
-Version `0.1.0` does **not** claim GPS-authoritative time.
+Version `0.1.0` does **not** claim GPS/PPS-authoritative video timestamps.
 
-The current evidence timestamp model uses:
+The current temporal model combines:
 
 ```text
-UTC system time
+system UTC
 monotonic clock
-clock_source: system
-time_quality: unsynchronized
-gps_authority: false
+local edge-time Capture Time Context
+GPS/PPS authority (future)
+physical camera exposure timing (not currently measured)
+container/media timestamps
 ```
 
-This is intentional because Raspberry Pi systems may not have a reliable hardware RTC and the current GPS/PPS integration is not yet part of `edge-video`.
+At the evidence boundary, `edge-video` requests Capture Time Context from the local `edge-time` instance and associates the returned context with the evidence segment manifest. The context includes the selected source, source observation, UTC and monotonic position, uncertainty, freshness, synchronization state, authority provenance, consistency state, holdover state, and attestation reference.
 
-Future integration with `edge-gps` must extend the timestamp authority without modifying the original video payload.
+Capture Time Context acquisition time is **not** the exact physical camera exposure time unless a separately defined sensor/frame timing mechanism establishes that relationship. The current implementation does not make that claim.
 
-The future timestamp model must distinguish:
+If local `edge-time` is unavailable, video capture and evidence finalization continue using the local system/monotonic timing model. The manifest records the unavailable temporal context rather than stopping authoritative capture.
+
+Future integration with `edge-gps` must extend temporal authority without modifying the original video payload or retroactively rewriting its provenance.
+
+The temporal model must continue to distinguish:
 
 ```text
 system clock
 monotonic clock
+edge-time Capture Time Context
 GPS-derived time
 PPS synchronization
-capture timing
+physical capture/exposure timing
 container/media timestamps
 ```
 
