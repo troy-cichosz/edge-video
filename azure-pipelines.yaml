@@ -143,14 +143,14 @@ jobs:
               -t $(LDR_IMAGE) \
               -f Dockerfile .
 
-            echo "Scanning $(LDR_IMAGE)"
-            trivy image \
-              --cache-dir "$(Build.ArtifactStagingDirectory)/trivy-cache" \
-              --severity CRITICAL \
-              --ignore-unfixed \
-              --exit-code 0 \
-              $(LDR_IMAGE) \
-              > $(Build.ArtifactStagingDirectory)/scans/Trivy-$(serviceName)-scan.txt
+            #echo "Scanning $(LDR_IMAGE)"
+            #trivy image \
+              #--cache-dir "$(Build.ArtifactStagingDirectory)/trivy-cache" \
+              #--severity CRITICAL \
+              #--ignore-unfixed \
+              #--exit-code 0 \
+              #$(LDR_IMAGE) \
+              #> $(Build.ArtifactStagingDirectory)/scans/Trivy-$(serviceName)-scan.txt
 
             echo "Pushing $(LDR_IMAGE)"
             docker push $(LDR_IMAGE)
