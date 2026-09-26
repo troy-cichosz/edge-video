@@ -1,8 +1,8 @@
-# edge-video — Sprint Status
+# edge-video - Sprint Status
 
 **Current sprint:** Evidence-facing temporal integration  
 **Status:** COMPLETE / VERIFIED  
-**Development phase:** Phase 1 evidence capture MVP → common evidence model
+**Development phase:** Phase 1 evidence capture MVP -> common evidence model
 
 ## Sprint Objective
 

@@ -1,4 +1,4 @@
-# edge-video — Service Status
+# edge-video - Service Status
 
 **Purpose:** Current development phase and maturity of the video evidence service.  
 **Status:** Operational MVP / temporal integration complete  
@@ -6,7 +6,7 @@
 
 ## Current Phase
 
-**Phase 1 — Evidence Capture MVP: OPERATIONAL**
+**Phase 1 - Evidence Capture MVP: OPERATIONAL**
 
 The Raspberry Pi CSI-camera evidence pipeline is operational as an MVP, including evidence-facing temporal integration with local `edge-time`.
 

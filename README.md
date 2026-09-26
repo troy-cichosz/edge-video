@@ -625,15 +625,15 @@ The target architecture is:
 
 ```text
 edge-video
-├── camera-0
-│   ├── evidence
-│   └── live
-├── camera-1
-│   ├── evidence
-│   └── live
-└── camera-N
-    ├── evidence
-    └── live
++-- camera-0
+|   +-- evidence
+|   +-- live
++-- camera-1
+|   +-- evidence
+|   +-- live
++-- camera-N
+    +-- evidence
+    +-- live
 ```
 
 Each camera must have an independent capture/evidence lifecycle.
